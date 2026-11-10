@@ -1,0 +1,820 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Qubitrino — WebGL прототип</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#08070C;
+    --accent:#6A52FF;
+    --accent-2:#8470FF;
+    --paper:#EAEAEA;
+    --p:0;
+    --reveal:0;
+    --text:1;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--ink); color:#fff; overflow-x:hidden;
+    font-family:"Google Sans","Product Sans","Inter",-apple-system,"Helvetica Neue",Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  body.locked{overflow:hidden}
+  @media (hover:hover) and (pointer:fine){
+    body{cursor:none}
+    a,button,label{cursor:none}
+  }
+
+  /* ================= прелоадер ================= */
+  .pre{
+    position:fixed; inset:0; z-index:60; background:var(--ink);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:0; transition:opacity .7s ease, visibility .7s;
+  }
+  .pre.gone{opacity:0; visibility:hidden; pointer-events:none}
+  .pre .sphere{
+    position:relative; width:190px; height:190px; margin-bottom:44px;
+    transition:transform .9s cubic-bezier(.6,0,.2,1), opacity .7s ease;
+  }
+  .pre.gone .sphere{transform:scale(.25); opacity:0}
+  .sphere .core{
+    position:absolute; inset:60px; border-radius:50%;
+    background:radial-gradient(circle at 45% 40%, rgba(196,186,255,.95), var(--accent) 45%, rgba(106,82,255,0) 78%);
+    filter:blur(2px); animation:breathe 3.4s ease-in-out infinite;
+  }
+  .sphere .shell{
+    position:absolute; inset:0; border-radius:50%;
+    border:1px solid rgba(160,142,255,.28);
+  }
+  .sphere .orbit{
+    position:absolute; inset:0; border-radius:50%;
+    border:1px solid rgba(160,142,255,.22);
+  }
+  .sphere .orbit.b{transform:rotate(58deg) scaleY(.44)}
+  .sphere .orbit.c{transform:rotate(-58deg) scaleY(.44)}
+  .sphere .orbit .spun{position:absolute; inset:0; animation:spin 9s linear infinite}
+  .sphere .orbit.b .spun{animation-duration:11s; animation-direction:reverse}
+  .sphere .orbit.c .spun{animation-duration:14s}
+  .sphere .orbit .spun b{
+    position:absolute; top:-3px; left:50%; width:6px; height:6px; margin-left:-3px;
+    border-radius:50%; background:#fff; box-shadow:0 0 12px 3px rgba(196,186,255,.9);
+  }
+  .sphere .ket{
+    position:absolute; left:50%; transform:translateX(-50%);
+    font-family:"Google Sans Code",ui-monospace,Menlo,monospace;
+    font-size:12px; color:rgba(255,255,255,.34); letter-spacing:.06em;
+  }
+  .sphere .ket.k0{top:-26px}
+  .sphere .ket.k1{bottom:-26px}
+  @keyframes breathe{0%,100%{transform:scale(.86);opacity:.75}50%{transform:scale(1.06);opacity:1}}
+  @keyframes spin{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+  .sphere .orbit.b, .sphere .orbit.c{transform-origin:50% 50%}
+
+  .pre h1{
+    margin:0 0 10px; font-size:30px; font-weight:500; letter-spacing:-.02em; text-align:center;
+  }
+  .pre p{
+    margin:0 0 34px; font-size:15px; line-height:1.5; color:rgba(255,255,255,.45);
+    text-align:center; max-width:420px;
+  }
+  .pre .choose{display:flex; gap:14px; flex-wrap:wrap; justify-content:center}
+  .pre .micro{
+    margin-top:26px; font-family:"Google Sans Code",ui-monospace,Menlo,monospace;
+    font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.22);
+  }
+
+  /* общие кнопки */
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:10px;
+    padding:12px 24px; border-radius:16px; border:0; font:inherit;
+    font-size:16px; font-weight:500; text-decoration:none; color:#fff;
+    transition:transform .22s ease, background .22s ease, box-shadow .22s ease;
+  }
+  .btn.solid{background:var(--accent)}
+  .btn.solid:hover{transform:translateY(-1px); box-shadow:0 16px 40px -18px rgba(106,82,255,1)}
+  .btn.ghosty{background:rgba(255,255,255,.1)}
+  .btn.ghosty:hover{background:rgba(255,255,255,.16); transform:translateY(-1px)}
+
+  /* ================= сцена ================= */
+  .stage{position:fixed; inset:0; z-index:1; overflow:hidden; background:var(--ink)}
+  canvas{position:absolute; inset:0; width:100%; height:100%; display:block}
+  .grain{position:absolute; inset:0; pointer-events:none; opacity:.35; mix-blend-mode:overlay;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='140' height='140'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/></filter><rect width='140' height='140' filter='url(%23n)' opacity='.5'/></svg>")}
+
+  /* шапка: только лого и эквалайзер */
+  .top{
+    position:absolute; top:0; left:0; right:0; z-index:5;
+    display:flex; align-items:center; justify-content:space-between;
+    padding:26px 40px;
+  }
+  .brand{display:flex; align-items:center; gap:10px; font-size:19px; font-weight:700; letter-spacing:-.01em}
+  .brand svg{width:24px; height:24px; color:var(--accent-2)}
+
+  .sound{
+    display:inline-flex; align-items:center; justify-content:center; padding:10px 12px;
+    border-radius:11px; border:1px solid rgba(255,255,255,.14); background:transparent;
+    color:rgba(255,255,255,.75); transition:border-color .2s ease, color .2s ease;
+  }
+  .sound:hover{border-color:rgba(255,255,255,.45); color:#fff}
+  .sound.off{color:rgba(255,255,255,.3)}
+  .sound.wait{color:#fff; border-color:rgba(255,255,255,.5); animation:pulse 2.4s ease-in-out infinite}
+  @keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(106,82,255,0)}50%{box-shadow:0 0 0 6px rgba(106,82,255,.2)}}
+  .eq{display:flex; align-items:flex-end; gap:2.5px; height:14px}
+  .eq i{display:block; width:2px; height:3px; background:currentColor; border-radius:1px; transition:height .09s linear}
+
+  /* ================= нижний блок ================= */
+  .hero{
+    position:absolute; left:0; right:0; bottom:0; z-index:3;
+    display:flex; flex-direction:column; align-items:center;
+    padding:0 24px 80px; pointer-events:none;
+    transform:translateY(0);
+  }
+  .hero .inner{
+    position:relative;
+    display:flex; flex-direction:column; align-items:center; text-align:center;
+    will-change:transform,opacity;
+  }
+  .hero .inner::before{
+    content:""; position:absolute; z-index:-1; left:50%; top:50%;
+    width:min(1100px,120vw); height:150%; transform:translate(-50%,-50%);
+    border-radius:50%; pointer-events:none;
+    background:radial-gradient(closest-side, rgba(8,7,12,.92) 0%, rgba(8,7,12,.75) 45%, rgba(8,7,12,0) 100%);
+    opacity:var(--plate,0); transition:opacity .2s linear;
+  }
+  .hero h1{
+    margin:0 0 18px; max-width:900px;
+    font-size:clamp(30px,3.4vw,48px); line-height:1.0; letter-spacing:-.03em; font-weight:500;
+    background:linear-gradient(90deg, rgba(255,255,255,.3) 0%, #fff 50%, rgba(255,255,255,.3) 100%);
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    -webkit-text-fill-color:transparent;
+  }
+  .hero p{
+    margin:0 0 26px; font-size:16px; line-height:1.2; color:rgba(255,255,255,.5); max-width:640px;
+  }
+  .hero .row{display:flex; gap:16px; flex-wrap:wrap; justify-content:center; pointer-events:auto}
+  .hero .btn{font-size:18px}
+  .line-wrap{
+    position:absolute; left:50%; bottom:0; margin-left:-0.5px;
+    width:1px; height:39px; z-index:4; pointer-events:none;
+  }
+  .line{
+    width:1px; height:39px; background:rgba(255,255,255,.2);
+    position:relative; overflow:hidden;
+  }
+  .line::after{
+    content:""; position:absolute; left:0; width:1px; height:16px; background:var(--accent);
+    animation:drip 2.1s cubic-bezier(.7,0,.3,1) infinite;
+  }
+  @keyframes drip{0%{transform:translateY(-18px)}70%,100%{transform:translateY(41px)}}
+
+  /* появление после прелоадера */
+  .anim{opacity:0; transform:translateY(18px); transition:opacity .9s cubic-bezier(.2,.6,.2,1), transform .9s cubic-bezier(.2,.6,.2,1)}
+  body.entered .anim{opacity:1; transform:none}
+  body.entered .anim.d1{transition-delay:.08s}
+  body.entered .anim.d2{transition-delay:.18s}
+  body.entered .anim.d3{transition-delay:.30s}
+  body.entered .anim.d4{transition-delay:.44s}
+
+  /* ================= второй блок ================= */
+  #spacer{height:320vh}
+  .next{position:relative; z-index:6; background:var(--paper); color:#181525;
+    padding:110px 40px 130px; min-height:100vh; border-radius:44px 44px 0 0;
+    display:flex; align-items:center; justify-content:center}
+  .next-inner{max-width:940px; width:100%}
+  body.still .next{position:fixed; inset:0; overflow:auto;
+    transform:translateY(calc((100 - var(--reveal)) * 1%))}
+  body.still .next-inner{opacity:var(--text); transform:translateY(calc((1 - var(--text)) * 26px))}
+  .kicker{font-family:"Google Sans Code",ui-monospace,Menlo,monospace; font-size:12px;
+    letter-spacing:.14em; text-transform:uppercase; color:rgba(24,21,37,.45); margin-bottom:26px}
+  .next h2{margin:0 0 22px; font-size:clamp(32px,4vw,60px); line-height:1.03;
+    letter-spacing:-.035em; font-weight:700; max-width:880px}
+  .next h2 span{color:var(--accent)}
+  .next p{margin:0 0 38px; font-size:17.5px; line-height:1.55; color:rgba(24,21,37,.6); max-width:640px}
+  .row2{display:flex; gap:16px; flex-wrap:wrap; align-items:center}
+  .big-cta{display:inline-flex; align-items:center; gap:10px; padding:18px 28px; border-radius:14px;
+    background:#181525; color:#fff; text-decoration:none; font-size:16px; font-weight:700;
+    transition:transform .25s ease, box-shadow .25s ease}
+  .big-cta:hover{transform:translateY(-2px); box-shadow:0 20px 44px -20px rgba(24,21,37,.85)}
+  .ghost{display:inline-flex; align-items:center; gap:10px; padding:18px 24px; border-radius:14px;
+    border:1px solid rgba(24,21,37,.18); color:#181525; text-decoration:none; font-size:16px; font-weight:600}
+  .ghost:hover{border-color:rgba(24,21,37,.4); background:rgba(24,21,37,.03)}
+  .fine{margin-top:50px; display:flex; gap:30px; flex-wrap:wrap; font-size:12.5px;
+    color:rgba(24,21,37,.4); font-family:"Google Sans Code",ui-monospace,Menlo,monospace}
+  .fine b{color:rgba(24,21,37,.72); font-weight:600}
+
+  /* курсор */
+  .cur{position:fixed; left:0; top:0; z-index:70; pointer-events:none; mix-blend-mode:difference}
+  .cur .ring{position:absolute; width:34px; height:34px; margin:-17px 0 0 -17px; border-radius:50%;
+    border:1px solid rgba(255,255,255,.75); transition:width .25s ease, height .25s ease,
+    margin .25s ease, border-color .25s ease, background-color .25s ease}
+  .cur .dot{position:absolute; width:5px; height:5px; margin:-2.5px 0 0 -2.5px; border-radius:50%;
+    background:#fff; transition:transform .2s ease}
+  .cur.on .ring{width:56px; height:56px; margin:-28px 0 0 -28px; border-color:#fff; background:rgba(255,255,255,.14)}
+  .cur.on .dot{transform:scale(.4)}
+
+  #status{position:fixed; left:12px; bottom:10px; z-index:80; font-family:ui-monospace,Menlo,monospace;
+    font-size:10px; color:rgba(255,255,255,.28); pointer-events:none; display:none}
+  body.debug #status{display:block}
+
+  @media (max-width:820px){
+    .top{padding:18px 20px}
+    .hero h1{font-size:34px}
+    .hero p{font-size:15px}
+    .hero .btn{font-size:16px; padding:12px 18px}
+    .next{padding:80px 24px 100px}
+    .cur{display:none}
+    .pre h1{font-size:24px}
+    .pre .sphere{width:150px; height:150px}
+  }
+  @media (prefers-reduced-motion:reduce){
+    .sphere .core,.sphere .orbit,.line::after,.sound.wait{animation:none}
+  }
+</style>
+</head>
+<body class="locked">
+<div class="cur" id="cur"><div class="ring"></div><div class="dot"></div></div>
+
+<!-- ==================== ПРЕЛОАДЕР ==================== -->
+<div class="pre" id="pre">
+  <div class="sphere">
+    <div class="shell"></div>
+    <div class="core"></div>
+    <div class="orbit b"><i class="spun"><b></b></i></div>
+    <div class="orbit c"><i class="spun"><b></b></i></div>
+    <span class="ket k0">|0⟩</span>
+    <span class="ket k1">|1⟩</span>
+  </div>
+  <h1>Кубит ещё не измерен</h1>
+  <p>Пока состояние не выбрано, страница в суперпозиции. Выберите вход — со звуком или без.</p>
+  <div class="choose">
+    <button class="btn solid" id="withMusic" data-hover>Войти с музыкой</button>
+    <button class="btn ghosty" id="noMusic" data-hover>Войти без музыки</button>
+  </div>
+  <div class="micro">Qubitrino · прототип</div>
+</div>
+
+<!-- ==================== СЦЕНА ==================== -->
+<div class="stage">
+  <canvas id="c"></canvas>
+  <div class="grain"></div>
+
+  <header class="top">
+    <div class="brand anim d1">
+      <svg viewBox="0 0 120 120" aria-hidden="true"><g transform="translate(60 60)" fill="currentColor">
+        <path d="M-3.5 -30.5L-3.5 -47.87A48 48 0 0 0 -47.87 -3.5L-30.5 -3.5A27 27 0 0 0 -3.5 -30.5Z"/>
+        <path d="M-3.5 -30.5L-3.5 -47.87A48 48 0 0 0 -47.87 -3.5L-30.5 -3.5A27 27 0 0 0 -3.5 -30.5Z" transform="rotate(90)"/>
+        <path d="M-3.5 -30.5L-3.5 -47.87A48 48 0 0 0 -47.87 -3.5L-30.5 -3.5A27 27 0 0 0 -3.5 -30.5Z" transform="rotate(270)"/>
+        <path d="M-3.5 -30.5L-3.5 -48L-41 -48A7 7 0 0 0 -48 -41L-48 -3.5L-30.5 -3.5A27 27 0 0 0 -3.5 -30.5Z" transform="rotate(180)"/>
+      </g></svg>
+      Qubitrino
+    </div>
+    <button class="sound anim d1" id="snd" data-hover aria-label="Звук">
+      <span class="eq" id="eq"><i style="height:4px"></i><i style="height:9px"></i><i style="height:13px"></i><i style="height:8px"></i><i style="height:5px"></i></span>
+    </button>
+  </header>
+
+  <div class="hero">
+    <div class="inner">
+      <h1 class="anim d2">Дневник сделок, правила<br>и разбор решений</h1>
+      <p class="anim d3">Загрузите отчёт из MetaTrader — Qubitrino посчитает, где уходят деньги</p>
+      <div class="row anim d4">
+        <a class="btn solid" href="#" data-hover>Войти по коду</a>
+        <a class="btn ghosty" href="#" data-hover>Как это работает</a>
+      </div>
+    </div>
+  </div>
+
+  <div class="line-wrap anim d4"><div class="line" id="line"></div></div>
+</div>
+
+<div id="spacer"></div>
+
+<section class="next" id="next">
+  <div class="next-inner">
+    <div class="kicker">WebGL-прототип · главный экран</div>
+    <h2>Возьмёте в команду — <span>доведу это до полного сайта</span></h2>
+    <p>Знак собран из четырёх тысяч частиц с глубиной, bloom и боке: точка резкости следит за курсором. Ниже — заглушка, дальше — весь лендинг, тексты и продакшен.</p>
+    <div class="row2">
+      <a class="big-cta" href="https://t.me/maletskiy" target="_blank" rel="noopener" data-hover>Взять в команду →</a>
+      <a class="ghost" href="https://qubitrino.ai/" target="_blank" rel="noopener" data-hover>Открыть текущий сайт</a>
+    </div>
+    <div class="fine">
+      <span><b>Qubitrino</b> · дневник сделок и правила</span>
+      <span>знак и палитра — из брендбука</span>
+      <span>прототип движения, не финальный дизайн</span>
+    </div>
+  </div>
+</section>
+
+<audio id="bgm" src="audio/theme.mp3" loop preload="auto"></audio>
+<div id="status"></div>
+
+<script>
+(function(){
+  const Q = new URLSearchParams(location.search);
+  const STILL = Q.get('still') === '1';
+  if(STILL){ document.body.classList.add('still','entered','unlocked'); document.body.classList.remove('locked'); }
+  if(Q.get('debug')==='1') document.body.classList.add('debug');
+  const F_P    = Q.has('t') ? parseFloat(Q.get('t')) : null;
+  const F_TIME = Q.has('time') ? parseFloat(Q.get('time')) : 0;
+  const F_MX   = Q.has('mx') ? parseFloat(Q.get('mx')) : null;
+  const F_MY   = Q.has('my') ? parseFloat(Q.get('my')) : null;
+  const status = document.getElementById('status');
+
+  /* ================= частицы ================= */
+  const PETAL='M-3.5 -30.5L-3.5 -47.87A48 48 0 0 0 -47.87 -3.5L-30.5 -3.5A27 27 0 0 0 -3.5 -30.5Z';
+  const PETAL_SQ='M-3.5 -30.5L-3.5 -48L-41 -48A7 7 0 0 0 -48 -41L-48 -3.5L-30.5 -3.5A27 27 0 0 0 -3.5 -30.5Z';
+
+  function buildParticles(){
+    const S=240, off=document.createElement('canvas'); off.width=S; off.height=S;
+    const o=off.getContext('2d'); o.translate(S/2,S/2); o.scale(1.9,1.9); o.fillStyle='#fff';
+    const base=new Path2D(PETAL), sq=new Path2D(PETAL_SQ);
+    [[0,base],[90,base],[270,base],[180,sq]].forEach(function(pair){
+      const p=new Path2D(); p.addPath(pair[1], new DOMMatrix().rotate(pair[0])); o.fill(p);
+    });
+    const data=o.getImageData(0,0,S,S).data, out=[], step=2;
+    for(let y=0;y<S;y+=step){
+      for(let x=0;x<S;x+=step){
+        if(data[(y*S+x)*4+3]<110) continue;
+        const nx=(x-S/2)/(S/2), ny=(y-S/2)/(S/2);
+        const r=Math.min(1, Math.hypot(nx,ny)), ang=Math.atan2(ny,nx);
+        const roll=Math.random();
+        let col=[0.415,0.322,1.0];                    // #6A52FF
+        if(roll>0.955) col=[1,1,1];
+        else if(roll>0.915) col=[0.247,0.788,0.455];
+        else if(roll>0.86) col=[0.63,0.56,1.0];
+        out.push({
+          r:r, a:ang,
+          z:(Math.random()*2-1)*0.55 + (1-r)*0.18,
+          spin:(1.28-r)*(0.94+Math.random()*0.12),
+          seed:Math.random()*6.283,
+          size:(0.55+Math.random()*0.9)*(0.7+r*0.6),
+          alpha:0.30+Math.random()*0.70,
+          col:col
+        });
+      }
+    }
+    return out;
+  }
+  const P = buildParticles();
+
+  /* ================= WebGL ================= */
+  const canvas=document.getElementById('c');
+  const gl=canvas.getContext('webgl2',{antialias:false,alpha:false,depth:false,
+    powerPreference:'high-performance'});
+  if(!gl){
+    document.body.innerHTML='<div style="display:grid;place-items:center;height:100vh;font:16px system-ui;color:#fff;text-align:center;padding:40px">Нужен WebGL2: Chrome, Safari 15+ или Firefox.</div>';
+    return;
+  }
+  const HDR = !!gl.getExtension('EXT_color_buffer_float');
+
+  function sh(type,src){
+    const s=gl.createShader(type); gl.shaderSource(s,src); gl.compileShader(s);
+    if(!gl.getShaderParameter(s,gl.COMPILE_STATUS)){
+      status.textContent='shader: '+gl.getShaderInfoLog(s).slice(0,160); throw new Error('shader');
+    }
+    return s;
+  }
+  function prog(vs,fs){
+    const p=gl.createProgram();
+    gl.attachShader(p,sh(gl.VERTEX_SHADER,vs)); gl.attachShader(p,sh(gl.FRAGMENT_SHADER,fs));
+    gl.linkProgram(p);
+    if(!gl.getProgramParameter(p,gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(p));
+    return p;
+  }
+
+  const VS_PART=`#version 300 es
+  in vec2 aPolar; in vec4 aMeta; in vec3 aColor;
+  uniform vec2 uRes; uniform float uRot,uScroll,uTime,uR,uFocus,uDpr,uIntro;
+  uniform vec2 uMouse; uniform vec2 uShift;
+  out vec3 vColor; out float vAlpha; out float vTw;
+  void main(){
+    float r=aPolar.x, ang=aPolar.y;
+    float depth=aMeta.x, spin=aMeta.y, seed=aMeta.z, baseSize=aMeta.w;
+    float wob=sin(uTime*1.1+seed*6.283)*0.006*(1.0+uScroll*1.2);
+    float grow = 1.0 + (1.0-uIntro)*0.85;              // вход: частицы слетаются
+    float radius=(r+wob)*uR*grow*(1.0+uScroll*0.55);
+    float a=ang+uRot+uScroll*3.1*spin;
+    vec3 p=vec3(cos(a)*radius, sin(a)*radius, depth*uR*0.55);
+    float ry=uMouse.x*0.30, rx=-uMouse.y*0.22;
+    float cy=cos(ry), sy=sin(ry);
+    p=vec3(cy*p.x+sy*p.z, p.y, -sy*p.x+cy*p.z);
+    float cx=cos(rx), sx=sin(rx);
+    p=vec3(p.x, cx*p.y-sx*p.z, sx*p.y+cx*p.z);
+    float persp=1.0/(1.0+p.z/uRes.y*0.55);
+    vec2 pos=(p.xy*persp+uShift)*2.0/uRes;
+    gl_Position=vec4(pos.x, pos.y, 0.0, 1.0);
+
+    float coc=clamp(abs(p.z/uR-uFocus)*1.5, 0.0, 2.4);
+    gl_PointSize=clamp(baseSize*1.55*(1.0+coc*1.6)*(1.0+uScroll*0.85)*uDpr, 1.2, 46.0);
+    vTw=0.62+0.38*sin(uTime*(0.40+seed*1.0)+seed*37.0);
+    vAlpha=clamp((0.30+0.70*(1.0-coc*0.32))*uIntro, 0.0, 1.0);
+    vColor=aColor;
+  }`;
+
+  const FS_PART=`#version 300 es
+  precision highp float;
+  in vec3 vColor; in float vAlpha; in float vTw; out vec4 frag;
+  void main(){
+    vec2 d=gl_PointCoord-0.5;
+    float d2=dot(d,d)*4.0;
+    float a=exp(-d2*2.2)*vAlpha;
+    frag=vec4(vColor*a*vTw*1.35, a);
+  }`;
+
+  const VS_QUAD=`#version 300 es
+  in vec2 aPos; out vec2 vUv;
+  void main(){ vUv=aPos*0.5+0.5; gl_Position=vec4(aPos,0.0,1.0); }`;
+
+  const FS_BRIGHT=`#version 300 es
+  precision highp float;
+  in vec2 vUv; uniform sampler2D uTex; uniform float uThreshold; out vec4 frag;
+  void main(){
+    vec3 c=texture(uTex,vUv).rgb;
+    float l=max(c.r,max(c.g,c.b));
+    float k=max(0.0,l-uThreshold)/max(l,1e-4);
+    frag=vec4(c*k,1.0);
+  }`;
+
+  const FS_BLUR=`#version 300 es
+  precision highp float;
+  in vec2 vUv; uniform sampler2D uTex; uniform vec2 uDir; out vec4 frag;
+  void main(){
+    vec3 s=texture(uTex,vUv).rgb*0.2270270270;
+    s+=texture(uTex,vUv+uDir*1.3846153846).rgb*0.3162162162;
+    s+=texture(uTex,vUv-uDir*1.3846153846).rgb*0.3162162162;
+    s+=texture(uTex,vUv+uDir*3.2307692308).rgb*0.0702702703;
+    s+=texture(uTex,vUv-uDir*3.2307692308).rgb*0.0702702703;
+    frag=vec4(s,1.0);
+  }`;
+
+  const FS_COMP=`#version 300 es
+  precision highp float;
+  in vec2 vUv;
+  uniform sampler2D uScene,uBloom1,uBloom2;
+  uniform float uTime,uReveal,uGlow,uResAspect; uniform vec2 uMouseUV;
+  out vec4 frag;
+  float hash(vec2 p){ return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453); }
+  void main(){
+    vec3 scene=texture(uScene,vUv).rgb;
+    vec3 b1=texture(uBloom1,vUv).rgb;
+    vec3 b2=texture(uBloom2,vUv).rgb;
+    vec3 col=scene + b1*0.85 + b2*1.30;
+    col=col/(col+vec3(0.85));
+    col=pow(col,vec3(0.92));
+    vec2 q=vUv-0.5;
+    float halo=exp(-length(q)*5.2);
+    col+=vec3(0.415,0.322,1.0)*halo*0.15;
+    vec2 mq=(vUv-uMouseUV)*vec2(uResAspect,1.0);
+    float cg=exp(-length(mq)*10.0);
+    col+=vec3(0.46,0.39,1.0)*cg*uGlow*0.42;
+    float vig=smoothstep(0.92,0.18,length(q));
+    col*=0.70+0.30*vig;
+    float g=hash(vUv*vec2(1920.0,1080.0)+uTime);
+    col+=(g-0.5)*0.035;
+    col*=mix(1.0,0.55,uReveal*0.01);
+    frag=vec4(col,1.0);
+  }`;
+
+  let pPart,pBright,pBlur,pComp,quad,partVAO,partBufs=[];
+  try{
+    pPart=prog(VS_PART,FS_PART); pBright=prog(VS_QUAD,FS_BRIGHT);
+    pBlur=prog(VS_QUAD,FS_BLUR); pComp=prog(VS_QUAD,FS_COMP);
+  }catch(e){ status.textContent='compile error'; throw e; }
+
+  quad=gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER,quad);
+  gl.bufferData(gl.ARRAY_BUFFER,new Float32Array([-1,-1, 3,-1, -1,3]),gl.STATIC_DRAW);
+
+  const polar=new Float32Array(P.length*2), meta=new Float32Array(P.length*4), color=new Float32Array(P.length*3);
+  P.forEach(function(q,i){
+    polar[i*2]=q.r; polar[i*2+1]=q.a;
+    meta[i*4]=q.z; meta[i*4+1]=q.spin; meta[i*4+2]=q.seed; meta[i*4+3]=q.size;
+    const k=q.alpha*1.5;
+    color[i*3]=q.col[0]*k; color[i*3+1]=q.col[1]*k; color[i*3+2]=q.col[2]*k;
+  });
+  partVAO=gl.createVertexArray();
+  gl.bindVertexArray(partVAO);
+  function attr(name,data,size,progRef){
+    const b=gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER,b); gl.bufferData(gl.ARRAY_BUFFER,data,gl.STATIC_DRAW);
+    const loc=gl.getAttribLocation(progRef,name);
+    if(loc>=0){ gl.enableVertexAttribArray(loc); gl.vertexAttribPointer(loc,size,gl.FLOAT,false,0,0); }
+    partBufs.push(b);
+  }
+  attr('aPolar',polar,2,pPart); attr('aMeta',meta,4,pPart); attr('aColor',color,3,pPart);
+  gl.bindVertexArray(null);
+
+  let W=1,H=1,DPR=1, SCENE=null, BA=[null,null], BB=[null,null];
+  function mkTex(w,h){
+    const t=gl.createTexture(); gl.bindTexture(gl.TEXTURE_2D,t);
+    gl.texImage2D(gl.TEXTURE_2D,0,HDR?gl.RGBA16F:gl.RGBA8,w,h,0,gl.RGBA,HDR?gl.HALF_FLOAT:gl.UNSIGNED_BYTE,null);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MIN_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_MAG_FILTER,gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_S,gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D,gl.TEXTURE_WRAP_T,gl.CLAMP_TO_EDGE);
+    return t;
+  }
+  function mkFBO(tex){
+    const f=gl.createFramebuffer(); gl.bindFramebuffer(gl.FRAMEBUFFER,f);
+    gl.framebufferTexture2D(gl.FRAMEBUFFER,gl.COLOR_ATTACHMENT0,gl.TEXTURE_2D,tex,0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    return {fbo:f, tex:tex, w:1, h:1};
+  }
+  function mkRT(w,h){ const t=mkTex(w,h); const rt=mkFBO(t); rt.w=w; rt.h=h; return rt; }
+  function killRT(rt){ if(rt){ gl.deleteFramebuffer(rt.fbo); gl.deleteTexture(rt.tex); } }
+
+  function resize(){
+    const st=document.querySelector('.stage');
+    DPR=Math.min(devicePixelRatio||1,1.75);
+    W=Math.max(2,Math.round((st.clientWidth||innerWidth)*DPR));
+    H=Math.max(2,Math.round((st.clientHeight||innerHeight)*DPR));
+    canvas.width=W; canvas.height=H;
+    canvas.style.width=(W/DPR)+'px'; canvas.style.height=(H/DPR)+'px';
+    killRT(SCENE); BA.forEach(killRT); BB.forEach(killRT);
+    SCENE=mkRT(W,H);
+    const sizes=[[Math.round(W/2),Math.round(H/2)],[Math.round(W/4),Math.round(H/4)]];
+    BA=sizes.map(function(s){ return mkRT(s[0],s[1]); });
+    BB=sizes.map(function(s){ return mkRT(s[0],s[1]); });
+  }
+
+  /* ================= состояние ================= */
+  let p=0,pS=0,mx=0,my=0,mxS=0,myS=0,curP=0,curT=0,curMX=0,curMY=0,intro=0,introTarget=0;
+  const spacer=document.getElementById('spacer');
+  function readScroll(){
+    const span=spacer.offsetHeight-innerHeight;
+    p=span>0?Math.min(1,Math.max(0,scrollY/span)):0;
+  }
+  addEventListener('scroll',readScroll,{passive:true});
+
+  /* сценарий нижнего блока: доехать до центра, потом гаснуть и уходить выше */
+  const heroInner=document.querySelector('.hero .inner');
+  const lineEl=document.getElementById('line');
+  let heroNeed=0, heroExtra=0;
+  function measureHero(){
+    heroInner.style.transform='none';
+    const b=heroInner.getBoundingClientRect();
+    heroNeed=Math.max(0,(b.top+b.height/2)-innerHeight/2);
+    heroExtra=innerHeight/2 + b.height/2 + 60;
+  }
+  function applyHero(pp){
+    const a=Math.min(1, pp/0.5);
+    const b=Math.max(0,(pp-0.5)/0.5);
+    const y=heroNeed*a + heroExtra*b;
+    heroInner.style.transform='translateY('+(-y).toFixed(2)+'px)';
+    const op=1-Math.max(0,Math.min(1,(pp-0.55)/0.30));
+    heroInner.style.opacity=op.toFixed(3);
+    heroInner.style.setProperty('--plate',(Math.min(1,pp/0.42)*0.60).toFixed(3));
+    if(lineEl) lineEl.style.opacity=Math.max(0,1-pp/0.33).toFixed(3);
+  }
+
+  const U={};
+  ['uRes','uRot','uScroll','uTime','uR','uFocus','uDpr','uMouse','uIntro','uShift'].forEach(function(n){
+    U[n]=gl.getUniformLocation(pPart,n);
+  });
+  function revealNow(){
+    const k=Math.max(0,Math.min(1,(curP-0.60)/0.38));
+    return k*k*(3-2*k)*100;
+  }
+  const REST_LIFT=62;   // на сколько знак поднят в покое, px (CSS)
+  function draw(pp,time,mX,mY,intr){
+    curP=pp; curT=time; curMX=mX; curMY=mY;
+    const R=Math.min(W,H)*0.285*(1+pp*0.55);
+    const lift=REST_LIFT*(1-Math.min(1,pp/0.5))*DPR;
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER,SCENE.fbo);
+    gl.viewport(0,0,W,H);
+    gl.clearColor(0.031,0.027,0.047,1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+    gl.enable(gl.BLEND); gl.blendFunc(gl.ONE,gl.ONE);
+
+    gl.useProgram(pPart);
+    gl.uniform2f(U.uRes,W,H);
+    gl.uniform1f(U.uRot,time*0.22+pp*Math.PI*2.4);
+    gl.uniform1f(U.uScroll,pp);
+    gl.uniform1f(U.uTime,time);
+    gl.uniform1f(U.uR,R);
+    gl.uniform1f(U.uFocus,0.0);
+    gl.uniform1f(U.uDpr,DPR);
+    gl.uniform1f(U.uIntro,intr);
+    gl.uniform2f(U.uMouse,mX,mY);
+    gl.uniform2f(U.uShift,0,lift);
+    gl.bindVertexArray(partVAO);
+    gl.drawArrays(gl.POINTS,0,P.length);
+    gl.bindVertexArray(null);
+    gl.disable(gl.BLEND);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER,BA[0].fbo);
+    gl.viewport(0,0,BA[0].w,BA[0].h);
+    gl.useProgram(pBright);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,SCENE.tex);
+    gl.uniform1i(gl.getUniformLocation(pBright,'uTex'),0);
+    gl.uniform1f(gl.getUniformLocation(pBright,'uThreshold'),0.42);
+    drawQuad(pBright);
+
+    blurLevel(0); blurLevel(1);
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER,null);
+    gl.viewport(0,0,W,H);
+    gl.useProgram(pComp);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,SCENE.tex);
+    gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D,BA[0].tex);
+    gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D,BA[1].tex);
+    gl.uniform1i(gl.getUniformLocation(pComp,'uScene'),0);
+    gl.uniform1i(gl.getUniformLocation(pComp,'uBloom1'),1);
+    gl.uniform1i(gl.getUniformLocation(pComp,'uBloom2'),2);
+    gl.uniform1f(gl.getUniformLocation(pComp,'uTime'),time);
+    const rv=revealNow();
+    gl.uniform1f(gl.getUniformLocation(pComp,'uReveal'),rv);
+    gl.uniform1f(gl.getUniformLocation(pComp,'uGlow'),Math.max(0,1-rv/55));
+    gl.uniform2f(gl.getUniformLocation(pComp,'uMouseUV'),mX*0.5+0.5,0.5-mY*0.5);
+    gl.uniform1f(gl.getUniformLocation(pComp,'uResAspect'),W/H);
+    drawQuad(pComp);
+  }
+  function drawQuad(progRef){
+    const loc=gl.getAttribLocation(progRef,'aPos');
+    gl.bindBuffer(gl.ARRAY_BUFFER,quad);
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc,2,gl.FLOAT,false,0,0);
+    gl.drawArrays(gl.TRIANGLES,0,3);
+  }
+  function blurLevel(level){
+    const src=BA[level], tmp=BB[level];
+    gl.viewport(0,0,src.w,src.h);
+    gl.useProgram(pBlur);
+    gl.uniform1i(gl.getUniformLocation(pBlur,'uTex'),0);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,tmp.fbo);
+    gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D,src.tex);
+    gl.uniform2f(gl.getUniformLocation(pBlur,'uDir'),0.62/src.w,0);
+    drawQuad(pBlur);
+    gl.bindFramebuffer(gl.FRAMEBUFFER,src.fbo);
+    gl.bindTexture(gl.TEXTURE_2D,tmp.tex);
+    gl.uniform2f(gl.getUniformLocation(pBlur,'uDir'),0,0.62/src.h);
+    drawQuad(pBlur);
+  }
+
+  /* ================= звук и эквалайзер ================= */
+  const bgm=document.getElementById('bgm');
+  const sndBtn=document.getElementById('snd');
+  const eqBars=Array.prototype.slice.call(document.querySelectorAll('#eq i'));
+  const IS_FILE = location.protocol === 'file:';
+  let actx=null, analyser=null, srcNode=null, freqData=null, graphFailed=false;
+  let levels=[0,0,0,0,0], muted=false;
+  try{ muted = localStorage.getItem('q-muted')==='1'; }catch(e){}
+  bgm.volume=0.55; bgm.muted=muted;
+  sndBtn.classList.toggle('off',muted);
+
+  function initGraph(){
+    if(actx || IS_FILE || graphFailed) return;
+    try{
+      actx=new (window.AudioContext||window.webkitAudioContext)();
+      srcNode=actx.createMediaElementSource(bgm);
+      analyser=actx.createAnalyser();
+      analyser.fftSize=64; analyser.smoothingTimeConstant=0.72;
+      srcNode.connect(analyser); analyser.connect(actx.destination);
+      freqData=new Uint8Array(analyser.frequencyBinCount);
+    }catch(e){ actx=null; graphFailed=true; }
+  }
+  function setMuted(v){
+    muted=v; bgm.muted=v;
+    try{ localStorage.setItem('q-muted',v?'1':'0'); }catch(e){}
+    sndBtn.classList.toggle('off',v);
+  }
+  function playMusic(){
+    setMuted(false);                 // «Войти с музыкой» = включить звук, как по эквалайзеру
+    initGraph();
+    if(actx && actx.state==='suspended') actx.resume();
+    const pr=bgm.play();
+    if(pr && pr.catch) pr.catch(function(e){
+      sndBtn.classList.add('wait');
+      // политика автоплея — повторим на ближайшем жесте
+      ['pointerdown','keydown','touchstart'].forEach(function(ev){
+        addEventListener(ev,function retry(){ bgm.play().then(function(){ sndBtn.classList.remove('wait'); }).catch(function(){}); },{once:true,passive:true});
+      });
+    });
+    if(pr && pr.then) pr.then(function(){ sndBtn.classList.remove('wait'); });
+  }
+  function stopMusic(){ bgm.pause(); }
+  sndBtn.addEventListener('click',function(e){
+    e.preventDefault();
+    const next=!muted;
+    setMuted(next);
+    if(!next) playMusic();
+  });
+  const BANDS=[[1,3],[4,7],[8,13],[14,20],[21,31]];
+  const phase=[0.0,1.3,2.6,3.9,5.2];
+  function updateEQ(t){
+    const playing = !muted && !bgm.paused && bgm.currentTime>0;
+    const real = analyser && playing;
+    if(real) analyser.getByteFrequencyData(freqData);
+    for(let i=0;i<eqBars.length;i++){
+      let v=0;
+      if(real){
+        const b=BANDS[i]; let sum=0,c=0;
+        for(let k=b[0];k<=b[1]&&k<freqData.length;k++){ sum+=freqData[k]; c++; }
+        v=c?sum/c/255:0;
+      } else if(playing){
+        const tt=t+bgm.currentTime;
+        v=Math.max(0.05,Math.min(1, 0.34+0.30*Math.sin(tt*2.1+phase[i])+0.20*Math.sin(tt*3.7+phase[i]*1.7)));
+      }
+      levels[i]+=(v-levels[i])*0.28;
+      eqBars[i].style.height=Math.max(2,Math.round(levels[i]*13))+'px';
+    }
+  }
+
+  /* ================= курсор ================= */
+  const cur=document.getElementById('cur');
+  let cx=innerWidth/2, cy=innerHeight/2, tx=cx, ty=cy;
+  if(STILL){
+    if(Q.has('cur')){
+      const pr=Q.get('cur').split(',');
+      tx=parseFloat(pr[0]); ty=parseFloat(pr[1]); cx=tx; cy=ty;
+      cur.style.transform='translate('+cx+'px,'+cy+'px)';
+    } else { cur.style.display='none'; }
+  }
+  addEventListener('mousemove',function(e){
+    tx=e.clientX; ty=e.clientY;
+    mx=(e.clientX/innerWidth-0.5)*2; my=(e.clientY/innerHeight-0.5)*2;
+  },{passive:true});
+  document.querySelectorAll('[data-hover]').forEach(function(el){
+    el.addEventListener('mouseenter',function(){ cur.classList.add('on'); });
+    el.addEventListener('mouseleave',function(){ cur.classList.remove('on'); });
+  });
+
+  /* ================= прелоадер ================= */
+  const pre=document.getElementById('pre');
+  let entered=false;
+  function enter(withMusic){
+    if(entered) return;
+    entered=true;
+    if(withMusic) playMusic(); else { setMuted(true); stopMusic(); }
+    document.body.classList.remove('locked');
+    pre.classList.add('gone');
+    setTimeout(function(){ pre.style.display='none'; },800);
+    introTarget=1;
+    document.body.classList.add('entered');
+  }
+  document.getElementById('withMusic').addEventListener('click',function(){ enter(true); });
+  document.getElementById('noMusic').addEventListener('click',function(){ enter(false); });
+  window.__enter = enter;
+  if(STILL){
+    intro=1; introTarget=1;
+    if(Q.get('pre')==='1'){ pre.style.display='flex'; document.body.classList.remove('entered'); }
+    else { pre.style.display='none'; }
+  }
+
+  /* ================= цикл ================= */
+  const t0=performance.now();
+  function loop(){
+    const time=(performance.now()-t0)/1000;
+    if(!STILL){
+      pS+=(p-pS)*0.10;
+      mxS+=((F_MX!==null?F_MX:mx)-mxS)*0.06;
+      myS+=((F_MY!==null?F_MY:my)-myS)*0.06;
+      cx+=(tx-cx)*0.18; cy+=(ty-cy)*0.18;
+      cur.style.transform='translate('+cx.toFixed(1)+'px,'+cy.toFixed(1)+'px)';
+      intro+=(introTarget-intro)*0.035;
+      const rv=revealNow();
+      const text=Math.max(0,Math.min(1,rv/22));
+      document.documentElement.style.setProperty('--p',pS.toFixed(4));
+      document.documentElement.style.setProperty('--reveal',rv.toFixed(1));
+      document.documentElement.style.setProperty('--text',text.toFixed(3));
+      applyHero(pS);
+      draw(pS,time,mxS,myS,intro);
+      updateEQ(time);
+    }
+    requestAnimationFrame(loop);
+  }
+
+  resize();
+  measureHero();
+  if(STILL){
+    const pp=F_P===null?0:F_P;
+    pS=pp;
+    const k=Math.max(0,Math.min(1,(pp-0.60)/0.38));
+    const rv=k*k*(3-2*k)*100;
+    document.documentElement.style.setProperty('--p',pp.toFixed(4));
+    document.documentElement.style.setProperty('--reveal',rv.toFixed(1));
+    document.documentElement.style.setProperty('--text',Math.max(0,Math.min(1,rv/22)).toFixed(3));
+    measureHero(); applyHero(pp);
+    draw(pp,F_TIME||2,F_MX||0,F_MY||0,1);
+    status.textContent=(HDR?'HDR · ':'LDR · ')+P.length+' частиц · '+W+'×'+H+' · file='+IS_FILE+' muted='+bgm.muted;
+  } else {
+    readScroll();
+    intro=0; introTarget=0;
+    status.textContent=(HDR?'HDR · ':'LDR · ')+P.length+' частиц';
+    loop();
+  }
+  addEventListener('resize',function(){
+    resize();
+    measureHero();
+    if(STILL){ applyHero(curP); draw(curP,curT,curMX,curMY,1); }
+  });
+})();
+</script>
+</body>
+</html>
